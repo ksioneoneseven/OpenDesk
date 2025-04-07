@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Asset Details: {{ asset.name }}</h5>
+                    <div class="btn-group">
+                        <a href="{{ url_for('assets.edit', id=asset.id) }}" class="btn btn-warning btn-sm">
+                            <i class="bi bi-pencil"></i> Edit
+                        </a>
+                        <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#deleteAssetModal">
+                            <i class="bi bi-trash"></i> Delete
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <dl class="row">
+                                <dt class="col-sm-4">Asset Type:</dt>
+                                <dd class="col-sm-8">
+                                    {% if asset.asset_type == 'computer' %}
+                                        <span class="badge bg-primary">Computer/Laptop</span>
+                                    {% elif asset.asset_type == 'server' %}
+                                        <span class="badge bg-danger">Server</span>
+                                    {% elif asset.asset_type == 'network' %}
+                                        <span class="badge bg-info">Network Device</span>
+                                    {% elif asset.asset_type == 'peripheral' %}
+                                        <span class="badge bg-secondary">Peripheral</span>
+                                    {% elif asset.asset_type == 'mobile' %}
+                                        <span class="badge bg-warning">Mobile Device</span>
+                                    {% else %}
+                                        <span class="badge bg-dark">Other</span>
+                                    {% endif %}
+                                </dd>
+                                
+                                <dt class="col-sm-4">Serial Number:</dt>
+                                <dd class="col-sm-8">{{ asset.serial_number or 'N/A' }}</dd>
+                                
+                                <dt class="col-sm-4">Status:</dt>
+                                <dd class="col-sm-8">
+                                    {% if asset.status == 'in_use' %}
+                                        <span class="badge bg-success">In Use</span>
+                                    {% elif asset.status == 'available' %}
+                                        <span class="badge bg-info">Available</span>
+                                    {% elif asset.status == 'maintenance' %}
+                                        <span class="badge bg-warning">Maintenance</span>
+                                    {% elif asset.status == 'retired' %}
+                                        <span class="badge bg-danger">Retired</span>
+                                    {% endif %}
+                                </dd>
+                            </dl>
+                        </div>
+                        <div class="col-md-6">
+                            <dl class="row">
+                                <dt class="col-sm-4">Purchase Date:</dt>
+                                <dd class="col-sm-8">
+                                    {{ asset.purchase_date.strftime('%Y-%m-%d') if asset.purchase_date else 'N/A' }}
+                                </dd>
+                                
+                                <dt class="col-sm-4">Warranty Expiry:</dt>
+                                <dd class="col-sm-8">
+                                    {% if asset.warranty_expiry %}
+                                        {% if asset.warranty_expiry < now().date() %}
+                                            <span class="text-danger">{{ asset.warranty_expiry.strftime('%Y-%m-%d') }} (Expired)</span>
+                                        {% elif (asset.warranty_expiry - now().date()).days <= 30 %}
+                                            <span class="text-warning">{{ asset.warranty_expiry.strftime('%Y-%m-%d') }} (Expiring Soon)</span>
+                                        {% else %}
+                                            {{ asset.warranty_expiry.strftime('%Y-%m-%d') }}
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="text-muted">N/A</span>
+                                    {% endif %}
+                                </dd>
+                                
+                                <dt class="col-sm-4">Assigned To:</dt>
+                                <dd class="col-sm-8">
+                                    {% if asset.assigned_user %}
+                                        {{ asset.assigned_user.full_name }}
+                                    {% else %}
+                                        <span class="text-muted">Unassigned</span>
+                                    {% endif %}
+                                </dd>
+                            </dl>
+                        </div>
+                    </div>
+                    
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <h6>Notes:</h6>
+                            <div class="p-3 bg-light rounded">
+                                {{ asset.notes|nl2br if asset.notes else 'No notes available.' }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Related Tickets -->
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Related Tickets</h5>
+                </div>
+                <div class="card-body">
+                    {% if tickets %}
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Subject</th>
+                                    <th>Status</th>
+                                    <th>Priority</th>
+                                    <th>Created</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for ticket in tickets %}
+                                <tr>
+                                    <td>{{ ticket.id }}</td>
+                                    <td>
+                                        <a href="{{ url_for('tickets.view', id=ticket.id) }}">{{ ticket.subject }}</a>
+                                    </td>
+                                    <td>
+                                        {% if ticket.status %}
+                                            {% set status_colors = {
+                                                'new': 'bg-info',
+                                                'open': 'bg-primary',
+                                                'in_progress': 'bg-warning',
+                                                'resolved': 'bg-success',
+                                                'closed': 'bg-secondary',
+                                                'on_hold': 'bg-danger'
+                                            } %}
+                                            {% set status_class = status_colors.get(ticket.status.name|lower|replace(' ', '_'), 'bg-secondary') %}
+                                            <span class="badge {{ status_class }}">
+                                                {{ ticket.status.name }}
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">Unknown</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if ticket.priority %}
+                                            {% set priority_colors = {
+                                                'low': 'bg-info',
+                                                'medium': 'bg-warning',
+                                                'high': 'bg-danger',
+                                                'urgent': 'bg-dark'
+                                            } %}
+                                            {% set priority_class = priority_colors.get(ticket.priority.name|lower, 'bg-secondary') %}
+                                            <span class="badge {{ priority_class }}">
+                                                {{ ticket.priority.name }}
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">Unknown</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ ticket.created_at.strftime('%Y-%m-%d') }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        No tickets associated with this asset.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <!-- Asset Assignment -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Asset Assignment</h5>
+                </div>
+                <div class="card-body">
+                    {% if asset.assigned_user %}
+                    <div class="alert alert-info">
+                        <p><strong>Currently assigned to:</strong> {{ asset.assigned_user.full_name }}</p>
+                        <form method="post" action="{{ url_for('assets.assign', id=asset.id) }}">
+                            <input type="hidden" name="user_id" value="0">
+                            <button type="submit" class="btn btn-warning btn-sm">Unassign</button>
+                        </form>
+                    </div>
+                    {% else %}
+                    <form method="post" action="{{ url_for('assets.assign', id=asset.id) }}">
+                        <div class="mb-3">
+                            <label for="user_id" class="form-label">Assign to User</label>
+                            <select name="user_id" id="user_id" class="form-select" required>
+                                <option value="">-- Select User --</option>
+                                {% for user in users %}
+                                <option value="{{ user.id }}">{{ user.full_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">Assign Asset</button>
+                        </div>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Asset Timeline -->
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Asset Timeline</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="timeline">
+                        <li class="timeline-item">
+                            <span class="timeline-point"></span>
+                            <div class="timeline-content">
+                                <h6>Asset Created</h6>
+                                <p class="text-muted small">{{ asset.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                            </div>
+                        </li>
+                        {% if asset.purchase_date %}
+                        <li class="timeline-item">
+                            <span class="timeline-point bg-success"></span>
+                            <div class="timeline-content">
+                                <h6>Purchased</h6>
+                                <p class="text-muted small">{{ asset.purchase_date.strftime('%Y-%m-%d') }}</p>
+                            </div>
+                        </li>
+                        {% endif %}
+                        {% if asset.warranty_expiry %}
+                        <li class="timeline-item">
+                            <span class="timeline-point bg-warning"></span>
+                            <div class="timeline-content">
+                                <h6>Warranty Expires</h6>
+                                <p class="text-muted small">{{ asset.warranty_expiry.strftime('%Y-%m-%d') }}</p>
+                            </div>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Asset Modal -->
+<div class="modal fade" id="deleteAssetModal" tabindex="-1" aria-labelledby="deleteAssetModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteAssetModalLabel">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                Are you sure you want to delete this asset? This action cannot be undone.
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form method="post" action="{{ url_for('assets.delete', id=asset.id) }}">
+                    <button type="submit" class="btn btn-danger">Delete Asset</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

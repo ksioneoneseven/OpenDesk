@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-10 offset-md-1">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Edit Article</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" action="{{ url_for('knowledge_base.edit_article', id=article.id) }}">
+                        {{ form.hidden_tag() }}
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                {{ form.title.label(class="form-label") }}
+                                {{ form.title(class="form-control") }}
+                                {% for error in form.title.errors %}
+                                <div class="text-danger">{{ error }}</div>
+                                {% endfor %}
+                            </div>
+                            <div class="col-md-4">
+                                {{ form.category_id.label(class="form-label") }}
+                                {{ form.category_id(class="form-select") }}
+                                {% for error in form.category_id.errors %}
+                                <div class="text-danger">{{ error }}</div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            {{ form.summary.label(class="form-label") }}
+                            {{ form.summary(class="form-control", rows=2) }}
+                            {% for error in form.summary.errors %}
+                            <div class="text-danger">{{ error }}</div>
+                            {% endfor %}
+                            <div class="form-text">A brief summary of the article that will appear in search results and listings.</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            {{ form.content.label(class="form-label") }}
+                            {{ form.content(class="form-control", rows=15, id="article-content") }}
+                            {% for error in form.content.errors %}
+                            <div class="text-danger">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                {{ form.tags.label(class="form-label") }}
+                                {{ form.tags(class="form-control") }}
+                                {% for error in form.tags.errors %}
+                                <div class="text-danger">{{ error }}</div>
+                                {% endfor %}
+                                <div class="form-text">Comma-separated tags to help with search and categorization.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check mt-4">
+                                    {{ form.is_internal(class="form-check-input") }}
+                                    {{ form.is_internal.label(class="form-check-label") }}
+                                    <div class="form-text">Internal articles are only visible to staff members, not to clients.</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <a href="{{ url_for('knowledge_base.article', id=article.id) }}" class="btn btn-secondary">Cancel</a>
+                            {{ form.submit(class="btn btn-primary") }}
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Article History</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-group">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>Created</strong>
+                                <div class="text-muted">by {{ article.author.full_name }}</div>
+                            </div>
+                            <span>{{ article.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>Last Updated</strong>
+                                <div class="text-muted">by {{ article.updated_by.full_name if article.updated_by else article.author.full_name }}</div>
+                            </div>
+                            <span>{{ article.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Include a rich text editor -->
+<link href="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-bs4.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-bs4.min.js"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize the rich text editor
+        $('#article-content').summernote({
+            height: 300,
+            toolbar: [
+                ['style', ['style']],
+                ['font', ['bold', 'underline', 'clear']],
+                ['color', ['color']],
+                ['para', ['ul', 'ol', 'paragraph']],
+                ['table', ['table']],
+                ['insert', ['link', 'picture']],
+                ['view', ['fullscreen', 'codeview', 'help']]
+            ],
+            callbacks: {
+                onImageUpload: function(files) {
+                    // You can implement image upload functionality here
+                    // For now, we'll just show an alert
+                    alert('Image upload is not implemented in this demo. Please use external image URLs.');
+                }
+            }
+        });
+    });
+</script>
+{% endblock %}

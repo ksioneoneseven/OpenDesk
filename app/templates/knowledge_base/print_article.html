@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ article.title }} - Knowledge Base</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .article-meta {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        .article-content {
+            margin-bottom: 30px;
+        }
+        .article-content img {
+            max-width: 100%;
+            height: auto;
+        }
+        .article-tags {
+            margin-top: 20px;
+            padding-top: 10px;
+            border-top: 1px solid #ddd;
+        }
+        .tag {
+            display: inline-block;
+            background-color: #f0f0f0;
+            padding: 3px 8px;
+            margin-right: 5px;
+            border-radius: 3px;
+            font-size: 0.8em;
+        }
+        footer {
+            margin-top: 30px;
+            border-top: 1px solid #ddd;
+            padding-top: 10px;
+            font-size: 0.8em;
+            color: #666;
+            text-align: center;
+        }
+        @media print {
+            body {
+                padding: 0;
+            }
+            .no-print {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>{{ article.title }}</h1>
+        <div class="article-meta">
+            <div>Category: {{ article.category.name }}</div>
+            <div>Last Updated: {{ article.updated_at.strftime('%Y-%m-%d') }}</div>
+            <div>Author: {{ article.author.full_name }}</div>
+        </div>
+    </header>
+    
+    <main>
+        <div class="article-summary">
+            <strong>Summary:</strong> {{ article.summary }}
+        </div>
+        
+        <div class="article-content">
+            {{ article.content|safe }}
+        </div>
+        
+        {% if article.tags %}
+        <div class="article-tags">
+            <strong>Tags:</strong>
+            {% for tag in article.tags.split(',') %}
+            <span class="tag">{{ tag.strip() }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </main>
+    
+    <footer>
+        <p>Printed from Helpdesk Knowledge Base on {{ now().strftime('%Y-%m-%d %H:%M') }}</p>
+        <p class="no-print">
+            <button onclick="window.print()">Print this Article</button>
+            <button onclick="window.close()">Close</button>
+        </p>
+    </footer>
+    
+    <script>
+        // Auto-print when the page loads
+        window.onload = function() {
+            // Small delay to ensure content is fully loaded
+            setTimeout(function() {
+                window.print();
+            }, 500);
+        };
+    </script>
+</body>
+</html>
