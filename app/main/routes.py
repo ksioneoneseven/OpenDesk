@@ -3,12 +3,13 @@ from flask_login import login_required, current_user
 from app import db
 from app.main import bp
 from app.models import Ticket, TicketStatus, TicketPriority, TicketType, User, TimeEntry, Asset, KnowledgeBaseArticle, TicketComment, Role, Setting
-from app.main.forms import TicketForm, TicketCommentForm, TicketAssignForm, TicketStatusForm, UserForm, SettingsForm
+from app.main.forms import TicketForm, TicketCommentForm, TicketAssignForm, TicketStatusForm, UserForm, SettingsForm, CommentReplyForm
 from sqlalchemy import func, and_
 from datetime import datetime, timedelta
 from functools import wraps
+import logging
 
-# Helper function to check if a user is an administrator
+# Role-based permission decorators
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -17,6 +18,34 @@ def admin_required(f):
             return redirect(url_for('main.dashboard'))
         return f(*args, **kwargs)
     return decorated_function
+
+def staff_required(f):
+    """Requires user to be Administrator or Technician"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.role or current_user.role.name not in ['Administrator', 'Technician']:
+            flash('You do not have permission to access this page.', 'danger')
+            return redirect(url_for('main.dashboard'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def technician_or_admin_required(f):
+    """Requires user to be Administrator or Technician"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.role or current_user.role.name not in ['Administrator', 'Technician']:
+            flash('You do not have permission to access this page.', 'danger')
+            return redirect(url_for('main.dashboard'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# Helper function to check if a user owns a ticket or is staff
+def can_view_ticket(ticket):
+    if not current_user.role:
+        return False
+    if current_user.role.name in ['Administrator', 'Technician']:
+        return True
+    return ticket.created_by == current_user.id
 
 @bp.route('/')
 @bp.route('/index')
@@ -31,7 +60,11 @@ def dashboard():
     statuses = TicketStatus.query.all()
     status_counts = {}
     for status in statuses:
-        count = Ticket.query.filter_by(status_id=status.id).count()
+        # If user role, only count tickets created by this user
+        if current_user.role and current_user.role.name == 'User':
+            count = Ticket.query.filter_by(status_id=status.id, created_by=current_user.id).count()
+        else:
+            count = Ticket.query.filter_by(status_id=status.id).count()
         status_counts[status.name] = {
             'count': count,
             'color': status.color
@@ -41,37 +74,84 @@ def dashboard():
     priorities = TicketPriority.query.all()
     priority_counts = {}
     for priority in priorities:
-        count = Ticket.query.filter_by(priority_id=priority.id).count()
+        # If user role, only count tickets created by this user
+        if current_user.role and current_user.role.name == 'User':
+            count = Ticket.query.filter_by(priority_id=priority.id, created_by=current_user.id).count()
+        else:
+            count = Ticket.query.filter_by(priority_id=priority.id).count()
         priority_counts[priority.name] = {
             'count': count,
             'color': priority.color
         }
     
-    # Get open tickets assigned to current user
-    my_tickets = Ticket.query.join(TicketStatus).filter(
-        Ticket.assigned_to == current_user.id,
-        TicketStatus.is_closed == False
-    ).order_by(Ticket.created_at.desc()).limit(5).all()
+    # Get open tickets assigned to or created by current user
+    if current_user.role and current_user.role.name == 'User':
+        # For users, show tickets they created
+        my_tickets = Ticket.query.join(TicketStatus).filter(
+            Ticket.created_by == current_user.id,
+            TicketStatus.is_closed == False
+        ).order_by(Ticket.created_at.desc()).limit(5).all()
+    else:
+        # For staff, show tickets assigned to them
+        my_tickets = Ticket.query.join(TicketStatus).filter(
+            Ticket.assigned_to == current_user.id,
+            TicketStatus.is_closed == False
+        ).order_by(Ticket.created_at.desc()).limit(5).all()
     
     # Get recent tickets
-    recent_tickets = Ticket.query.order_by(Ticket.created_at.desc()).limit(10).all()
+    if current_user.role and current_user.role.name == 'User':
+        # For users, only show tickets they created
+        recent_tickets = Ticket.query.filter_by(created_by=current_user.id).order_by(Ticket.created_at.desc()).limit(10).all()
+        # Users don't see unassigned tickets
+        unassigned_tickets = []
+    else:
+        # For staff, show all tickets
+        recent_tickets = Ticket.query.order_by(Ticket.created_at.desc()).limit(10).all()
+        # For technicians and administrators, show unassigned tickets
+        unassigned_tickets = Ticket.query.join(TicketStatus).filter(
+            Ticket.assigned_to == None,
+            TicketStatus.is_closed == False
+        ).order_by(Ticket.created_at.desc()).limit(5).all()
     
     # Get overdue tickets
-    overdue_tickets = Ticket.query.filter(
-        Ticket.due_date < datetime.utcnow(),
-        Ticket.status.has(TicketStatus.is_closed == False)
-    ).count()
+    if current_user.role and current_user.role.name == 'User':
+        # For users, only count their tickets
+        overdue_tickets = Ticket.query.filter(
+            Ticket.due_date < datetime.utcnow(),
+            Ticket.status.has(TicketStatus.is_closed == False),
+            Ticket.created_by == current_user.id
+        ).count()
+    else:
+        # For staff, count all tickets
+        overdue_tickets = Ticket.query.filter(
+            Ticket.due_date < datetime.utcnow(),
+            Ticket.status.has(TicketStatus.is_closed == False)
+        ).count()
     
     # Get SLA breached tickets
-    sla_breached = Ticket.query.filter(
-        and_(
-            Ticket.status.has(TicketStatus.is_closed == False),
-            (
-                and_(Ticket.sla_response_due < datetime.utcnow(), Ticket.sla_response_met == False) |
-                and_(Ticket.sla_resolution_due < datetime.utcnow(), Ticket.sla_resolution_met == False)
+    if current_user.role and current_user.role.name == 'User':
+        # For users, only count their tickets
+        sla_breached = Ticket.query.filter(
+            and_(
+                Ticket.status.has(TicketStatus.is_closed == False),
+                Ticket.created_by == current_user.id,
+                (
+                    and_(Ticket.sla_response_due < datetime.utcnow(), Ticket.sla_response_met == False) |
+                    and_(Ticket.sla_resolution_due < datetime.utcnow(), Ticket.sla_resolution_met == False)
+                )
             )
-        )
-    ).count()
+        ).count()
+    else:
+        # For staff, count all tickets
+        sla_breached = Ticket.query.filter(
+            and_(
+                Ticket.status.has(TicketStatus.is_closed == False),
+                (
+                    and_(Ticket.sla_response_due < datetime.utcnow(), Ticket.sla_response_met == False) |
+                    and_(Ticket.sla_resolution_due < datetime.utcnow(), Ticket.sla_resolution_met == False)
+                )
+            )
+        ).count()
     
     # Get SLA at risk tickets (within 75% of SLA time)
     now = datetime.utcnow()
@@ -138,6 +218,7 @@ def dashboard():
                            priority_counts=priority_counts,
                            my_tickets=my_tickets,
                            recent_tickets=recent_tickets,
+                           unassigned_tickets=unassigned_tickets,
                            overdue_tickets=overdue_tickets,
                            sla_breached=sla_breached,
                            at_risk_tickets=at_risk_tickets,
@@ -172,8 +253,10 @@ def create_ticket():
         )
         
         # Handle assigned_to field
-        if form.assigned_to.data != 0:  # Not unassigned
+        if form.assigned_to.data != 0 and current_user.role.name in ['Administrator', 'Technician']:  # Not unassigned and user has permission
             ticket.assigned_to = form.assigned_to.data
+        else:
+            ticket.assigned_to = None  # Ensure regular users can't assign tickets
             
         # Handle due date
         if form.due_date.data:
@@ -191,6 +274,12 @@ def create_ticket():
 @login_required
 def view_ticket(ticket_id):
     ticket = Ticket.query.get_or_404(ticket_id)
+    
+    # Check if user has permission to view this ticket
+    if not can_view_ticket(ticket):
+        flash('You do not have permission to view this ticket.', 'danger')
+        return redirect(url_for('main.dashboard'))
+    
     comment_form = TicketCommentForm()
     assign_form = TicketAssignForm()
     status_form = TicketStatusForm()
@@ -211,9 +300,35 @@ def view_ticket(ticket_id):
     
     # Query comments with the appropriate sort order
     if sort_order == 'desc':
-        comments = TicketComment.query.filter_by(ticket_id=ticket_id).order_by(TicketComment.created_at.desc()).all()
+        query = TicketComment.query.filter_by(ticket_id=ticket_id, parent_id=None)
+        # If user is not staff, only show public comments
+        if current_user.role.name not in ['Administrator', 'Technician']:
+            query = query.filter_by(is_internal=False)
+        comments = query.order_by(TicketComment.created_at.desc()).all()
     else:
-        comments = TicketComment.query.filter_by(ticket_id=ticket_id).order_by(TicketComment.created_at).all()
+        query = TicketComment.query.filter_by(ticket_id=ticket_id, parent_id=None)
+        # If user is not staff, only show public comments
+        if current_user.role.name not in ['Administrator', 'Technician']:
+            query = query.filter_by(is_internal=False)
+        comments = query.order_by(TicketComment.created_at).all()
+        
+    # Fetch replies for each comment
+    for comment in comments:
+        # If user is not staff, only show public replies
+        if current_user.role.name not in ['Administrator', 'Technician']:
+            comment.replies = TicketComment.query.filter_by(
+                ticket_id=ticket_id, 
+                parent_id=comment.id,
+                is_internal=False
+            ).order_by(TicketComment.created_at).all()
+        else:
+            comment.replies = TicketComment.query.filter_by(
+                ticket_id=ticket_id, 
+                parent_id=comment.id
+            ).order_by(TicketComment.created_at).all()
+        
+    # Create a reply form for each comment
+    reply_form = CommentReplyForm()
     
     # Set the current assignee in the form
     if ticket.assigned_to:
@@ -224,19 +339,29 @@ def view_ticket(ticket_id):
     # Set the current status in the form
     if ticket.status_id:
         status_form.status_id.data = ticket.status_id
+        
+    # Determine if user can modify ticket status and assignment
+    can_modify = current_user.role.name in ['Administrator', 'Technician']
+    
+    # Determine if user can add internal comments
+    can_add_internal = current_user.role.name in ['Administrator', 'Technician']
     
     return render_template('main/view_ticket.html', 
                            title=f'Ticket #{ticket.id}', 
                            ticket=ticket, 
                            comment_form=comment_form,
+                           reply_form=reply_form,
                            assign_form=assign_form,
                            status_form=status_form,
                            comments=comments,
                            sort_order=sort_order,
-                           active_tab=active_tab)
+                           active_tab=active_tab,
+                           can_modify=can_modify,
+                           can_add_internal=can_add_internal)
 
 @bp.route('/tickets/<int:ticket_id>/assign', methods=['POST'])
 @login_required
+@staff_required
 def assign_ticket(ticket_id):
     ticket = Ticket.query.get_or_404(ticket_id)
     form = TicketAssignForm()
@@ -266,6 +391,7 @@ def assign_ticket(ticket_id):
 
 @bp.route('/tickets/<int:ticket_id>/status', methods=['POST'])
 @login_required
+@staff_required
 def update_ticket_status(ticket_id):
     form = TicketStatusForm()
     
@@ -339,35 +465,155 @@ def update_ticket_status(ticket_id):
 @bp.route('/tickets/<int:ticket_id>/comment', methods=['POST'])
 @login_required
 def add_comment(ticket_id):
+    ticket = Ticket.query.get_or_404(ticket_id)
     form = TicketCommentForm()
+    
+    current_app.logger.info(f'Attempting to add comment to ticket {ticket_id} by user {current_user.id}')
+    current_app.logger.debug(f'Form data received: {request.form}')
+    
+    # Check if user has permission to view this ticket
+    if not can_view_ticket(ticket):
+        current_app.logger.warning(f'User {current_user.id} lacks permission to comment on ticket {ticket_id}')
+        flash('You do not have permission to comment on this ticket.', 'danger')
+        return redirect(url_for('main.dashboard'))
+    
+    if form.validate_on_submit():
+        current_app.logger.info(f'Comment form validated successfully for ticket {ticket_id}')
+        try:
+            # The is_internal field is a SelectField with string values
+            is_internal = form.is_internal.data == '1'
+            current_app.logger.debug(f'is_internal value determined: {is_internal}')
+            
+            if is_internal and current_user.role.name not in ['Administrator', 'Technician']:
+                current_app.logger.warning(f'User {current_user.id} attempted to add internal comment without permission on ticket {ticket_id}')
+                flash('You do not have permission to add internal comments.', 'danger')
+                return redirect(url_for('main.view_ticket', ticket_id=ticket_id, tab='comments'))
+            
+            # Create new comment object
+            comment = TicketComment(
+                ticket_id=ticket_id,
+                user_id=current_user.id,
+                content=form.content.data,
+                is_internal=is_internal,
+                created_at=datetime.utcnow()
+            )
+            current_app.logger.debug(f'TicketComment object created: {comment}')
+            
+            db.session.add(comment)
+            current_app.logger.info(f'Adding comment {comment.id if comment.id else "(pending)"} to session for ticket {ticket_id}')
+            db.session.flush()  # Get the comment ID before checking status
+            current_app.logger.info(f'Comment {comment.id} flushed to session.')
+            
+            # Check if status is being updated and user has permission
+            status_id = form.status_id.data
+            current_app.logger.debug(f'Status ID from form: {status_id}')
+            if status_id != 0 and current_user.role and current_user.role.name in ['Administrator', 'Technician']:
+                current_app.logger.info(f'Updating ticket {ticket_id} status to {status_id}')
+                # Update ticket status
+                ticket.status_id = status_id
+                db.session.add(ticket) # Ensure ticket update is staged
+                flash('Comment added and ticket status updated successfully!', 'success')
+            else:
+                flash('Comment added successfully!', 'success')
+            
+            current_app.logger.info(f'Committing transaction for comment {comment.id} on ticket {ticket_id}')
+            db.session.commit()
+            current_app.logger.info(f'Transaction committed successfully for comment {comment.id}')
+            
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f'Error adding comment to ticket {ticket_id}: {str(e)}', exc_info=True)
+            flash('Error adding comment. Please check logs for details.', 'danger')
+    else:
+        # Log validation errors if the form fails validation
+        current_app.logger.warning(f'Comment form validation failed for ticket {ticket_id}. Errors: {form.errors}')
+        for field, errors in form.errors.items():
+            for error in errors:
+                flash(f"Error in field '{getattr(form, field).label.text}': {error}", 'danger')
+    
+    return redirect(url_for('main.view_ticket', ticket_id=ticket_id, tab='comments'))
+
+@bp.route('/tickets/<int:ticket_id>/comment/<int:comment_id>/reply/form', methods=['GET'])
+@login_required
+def reply_to_comment_form(ticket_id, comment_id):
+    ticket = Ticket.query.get_or_404(ticket_id)
+    parent_comment = TicketComment.query.get_or_404(comment_id)
+    form = CommentReplyForm()
+    
+    # Check if user has permission to view this ticket
+    if not can_view_ticket(ticket):
+        flash('You do not have permission to comment on this ticket.', 'danger')
+        return redirect(url_for('main.dashboard'))
+    
+    # Verify that the parent comment belongs to the ticket
+    if parent_comment.ticket_id != ticket_id:
+        flash('Invalid comment.', 'danger')
+        return redirect(url_for('main.view_ticket', ticket_id=ticket_id, tab='comments'))
+    
+    return render_template('main/reply_to_comment.html', 
+                          title=f'Reply to Comment - Ticket #{ticket.id}',
+                          ticket=ticket,
+                          parent_comment=parent_comment,
+                          form=form,
+                          can_add_internal=current_user.role.name in ['Administrator', 'Technician'])
+
+@bp.route('/tickets/<int:ticket_id>/comment/<int:comment_id>/reply', methods=['POST'])
+@login_required
+def reply_to_comment(ticket_id, comment_id):
+    ticket = Ticket.query.get_or_404(ticket_id)
+    parent_comment = TicketComment.query.get_or_404(comment_id)
+    form = CommentReplyForm()
+    
+    # Check if user has permission to view this ticket
+    if not can_view_ticket(ticket):
+        flash('You do not have permission to comment on this ticket.', 'danger')
+        return redirect(url_for('main.dashboard'))
+    
+    # Verify that the parent comment belongs to the ticket
+    if parent_comment.ticket_id != ticket_id:
+        flash('Invalid comment.', 'danger')
+        return redirect(url_for('main.view_ticket', ticket_id=ticket_id, tab='comments'))
     
     if form.validate_on_submit():
         try:
-            # Use the direct SQL execution approach
-            from sqlalchemy import text
-            
-            # Insert the comment directly using SQL
-            sql = text("""
-                INSERT INTO ticket_comment (ticket_id, user_id, content, is_internal, created_at)
-                VALUES (:ticket_id, :user_id, :content, :is_internal, :created_at)
-            """)
-            
-            # Execute the SQL with parameters
-            with db.engine.begin() as conn:
-                conn.execute(sql, {
-                    'ticket_id': ticket_id,
-                    'user_id': current_user.id,
-                    'content': form.content.data,
-                    'is_internal': form.is_internal.data,
-                    'created_at': datetime.utcnow()
-                })
-            
-            flash('Comment added successfully!', 'success')
+            is_internal = form.is_internal.data == '1'
+            current_app.logger.debug(f'Reply is_internal value determined: {is_internal}')
+
+            if is_internal and current_user.role.name not in ['Administrator', 'Technician']:
+                current_app.logger.warning(f'User {current_user.id} attempted to add internal reply without permission on ticket {ticket_id}, comment {comment_id}')
+                flash('You do not have permission to add internal comments.', 'danger')
+                return redirect(url_for('main.view_ticket', ticket_id=ticket_id, tab='comments'))
+
+            # Create new reply comment object
+            reply = TicketComment(
+                ticket_id=ticket_id,
+                user_id=current_user.id,
+                content=form.content.data,
+                is_internal=is_internal,
+                parent_id=comment_id,
+                created_at=datetime.utcnow()
+            )
+            current_app.logger.debug(f'TicketComment reply object created: {reply}')
+
+            db.session.add(reply)
+            current_app.logger.info(f'Adding reply {reply.id if reply.id else "(pending)"} to session for ticket {ticket_id}')
+            db.session.commit()
+            current_app.logger.info(f'Transaction committed successfully for reply {reply.id}')
+
+            flash('Reply added successfully!', 'success')
         except Exception as e:
-            current_app.logger.error(f'Error adding comment: {str(e)}')
-            flash('Error adding comment. Please try again.', 'danger')
-    
-    return redirect(url_for('main.view_ticket', ticket_id=ticket_id, tab='comments'))
+            db.session.rollback()
+            current_app.logger.error(f'Error adding reply to comment {comment_id} on ticket {ticket_id}: {str(e)}', exc_info=True)
+            flash('Error adding reply. Please check logs for details.', 'danger')
+    else:
+        # Log validation errors if the form fails validation
+        current_app.logger.warning(f'Reply form validation failed for ticket {ticket_id}, comment {comment_id}. Errors: {form.errors}')
+        for field, errors in form.errors.items():
+            for error in errors:
+                flash(f"Error in field '{getattr(form, field).label.text}': {error}", 'danger')
+
+    # Redirect to the specific comment that was replied to
+    return redirect(url_for('main.view_ticket', ticket_id=ticket_id, tab='comments') + f'#comment-{comment_id}')
 
 @bp.route('/users')
 @login_required
@@ -415,12 +661,12 @@ def create_user():
 @admin_required
 def edit_user(user_id):
     user = User.query.get_or_404(user_id)
-    form = UserForm(original_username=user.username)
+    form = UserForm(original_username=user.username, original_email=user.email)
     
     if request.method == 'GET':
         form.username.data = user.username
         form.email.data = user.email
-        form.role.data = user.role
+        form.role.data = user.role.name if user.role else 'User'  # Set to role name, not role object
         form.is_active.data = user.is_active
     
     if form.validate_on_submit():
@@ -475,39 +721,12 @@ def toggle_user_status(user_id):
     
     return redirect(url_for('main.users'))
 
-@bp.route('/settings', methods=['GET', 'POST'])
+@bp.route('/settings')
 @login_required
 @admin_required
 def settings():
-    form = SettingsForm()
-    
-    # Get current theme setting
-    theme_setting = Setting.query.filter_by(key='theme').first()
-    
-    if form.validate_on_submit():
-        try:
-            # If theme setting exists, update it
-            if theme_setting:
-                theme_setting.value = form.theme.data
-            else:
-                # Create new theme setting
-                theme_setting = Setting(key='theme', value=form.theme.data, description='Application theme (light/dark)')
-                db.session.add(theme_setting)
-            
-            db.session.commit()
-            flash('Settings updated successfully!', 'success')
-            return redirect(url_for('main.settings'))
-        except Exception as e:
-            db.session.rollback()
-            flash(f'Error updating settings: {str(e)}', 'danger')
-    
-    # Set form defaults from current settings
-    if theme_setting and not form.is_submitted():
-        form.theme.data = theme_setting.value
-    elif not theme_setting and not form.is_submitted():
-        form.theme.data = 'light'  # Default to light mode if no setting exists
-    
-    return render_template('main/settings.html', title='Application Settings', form=form)
+    # Redirect to the new settings module
+    return redirect(url_for('settings.index'))
 
 @bp.route('/search')
 @login_required

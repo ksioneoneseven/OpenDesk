@@ -148,12 +148,15 @@ class TicketComment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ticket_id = db.Column(db.Integer, db.ForeignKey('ticket.id'))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    parent_id = db.Column(db.Integer, db.ForeignKey('ticket_comment.id'), nullable=True)
     content = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_internal = db.Column(db.Boolean, default=False)
     
-    # Relationship
+    # Relationships
     user = db.relationship('User', backref='comments')
+    replies = db.relationship('TicketComment', backref=db.backref('parent', remote_side=[id]),
+                            lazy='dynamic', cascade='all, delete-orphan')
     
     def __repr__(self):
         return f'<TicketComment {self.id}>'
@@ -205,19 +208,18 @@ class Asset(db.Model):
     def __repr__(self):
         return f'<Asset {self.id}: {self.name}>'
 
-
 # Association table for tickets and assets
 ticket_asset = db.Table('ticket_asset',
     db.Column('ticket_id', db.Integer, db.ForeignKey('ticket.id'), primary_key=True),
     db.Column('asset_id', db.Integer, db.ForeignKey('asset.id'), primary_key=True)
 )
 
-
 class KnowledgeBaseCategory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(128))
     description = db.Column(db.Text)
     parent_id = db.Column(db.Integer, db.ForeignKey('knowledge_base_category.id'))
+    is_private = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Relationships
@@ -238,11 +240,25 @@ class KnowledgeBaseArticle(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_published = db.Column(db.Boolean, default=True)
     view_count = db.Column(db.Integer, default=0)
+    file_format = db.Column(db.String(10), default='txt')  # 'txt' or 'md'
     creator = db.relationship('User', foreign_keys=[created_by], backref='created_kb_articles')
     updater = db.relationship('User', foreign_keys=[updated_by], backref='updated_kb_articles')
+    images = db.relationship('KnowledgeBaseImage', backref='article', lazy='dynamic', cascade='all, delete-orphan')
     
     def __repr__(self):
         return f'<KBArticle {self.id}: {self.title}>'
+
+class KnowledgeBaseImage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255))
+    file_path = db.Column(db.String(255))
+    article_id = db.Column(db.Integer, db.ForeignKey('knowledge_base_article.id'))
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    uploaded_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    uploader = db.relationship('User', backref='uploaded_kb_images')
+    
+    def __repr__(self):
+        return f'<KBImage {self.id}: {self.filename}>'
 
 class Setting(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -301,7 +317,7 @@ def check_first_response(mapper, connection, target):
             if ticket.sla_response_due and ticket.first_response_at <= ticket.sla_response_due:
                 ticket.sla_response_met = True
             db.session.add(ticket)
-            db.session.commit()
+            # db.session.commit() # Removed commit: Let the main transaction handle it
 
 # Create default data for the application
 def create_default_data():
