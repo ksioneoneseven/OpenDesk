@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="jumbotron">
+    <h1 class="display-4">Welcome to OpenDesk</h1>
+    <p class="lead">A modern helpdesk ticketing system for your organization.</p>
+    <hr class="my-4">
+    <p>OpenDesk helps you manage support tickets, track issues, and provide better service to your users.</p>
+    {% if not current_user.is_authenticated %}
+    <p class="lead">
+        <a class="btn btn-primary btn-lg" href="{{ url_for('auth.login') }}" role="button">Login</a>
+        <a class="btn btn-outline-primary btn-lg" href="{{ url_for('auth.register') }}" role="button">Register</a>
+    </p>
+    {% else %}
+    <p class="lead">
+        <a class="btn btn-primary btn-lg" href="{{ url_for('main.dashboard') }}" role="button">Go to Dashboard</a>
+    </p>
+    {% endif %}
+</div>
+
+<div class="row mt-5">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Ticket Management</h5>
+                <p class="card-text">Create, track, and resolve support tickets efficiently.</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">User-Friendly Interface</h5>
+                <p class="card-text">Intuitive design for both support staff and end-users.</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Reporting & Analytics</h5>
+                <p class="card-text">Gain insights into support performance and trends.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

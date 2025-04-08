@@ -205,11 +205,13 @@ class Asset(db.Model):
     def __repr__(self):
         return f'<Asset {self.id}: {self.name}>'
 
+
 # Association table for tickets and assets
 ticket_asset = db.Table('ticket_asset',
     db.Column('ticket_id', db.Integer, db.ForeignKey('ticket.id'), primary_key=True),
     db.Column('asset_id', db.Integer, db.ForeignKey('asset.id'), primary_key=True)
 )
+
 
 class KnowledgeBaseCategory(db.Model):
     id = db.Column(db.Integer, primary_key=True)

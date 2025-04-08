@@ -5,6 +5,8 @@ from flask_login import LoginManager
 from flask_mail import Mail
 from flask_bcrypt import Bcrypt
 from config import Config
+import jinja2
+import markupsafe
 
 # Initialize Flask extensions
 db = SQLAlchemy()
@@ -48,12 +50,25 @@ def create_app(config_class=Config):
     from app.time_expenses import bp as time_expenses_bp
     app.register_blueprint(time_expenses_bp, url_prefix='/time-expenses')
     
+    # Register context processors
+    from app.context_processors import inject_settings
+    app.context_processor(inject_settings)
+    
     from app.knowledge_base import bp as kb_bp
     app.register_blueprint(kb_bp, url_prefix='/kb')
     
     # Error handlers
     from app.errors import bp as errors_bp
     app.register_blueprint(errors_bp)
+    
+    # Add custom Jinja2 filters
+    @app.template_filter('nl2br')
+    def nl2br(value):
+        """Convert newlines to HTML line breaks."""
+        if not value:
+            return ''
+        result = markupsafe.escape(value).replace('\n', markupsafe.Markup('<br>'))
+        return markupsafe.Markup(result)
     
     # Create database tables on first run
     with app.app_context():

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1>Dashboard</h1>
+        <p>Welcome, {{ current_user.username }}!</p>
+        
+        <div class="row mt-4">
+            {% for status, data in status_counts.items() %}
+            <div class="col-md-3">
+                <div class="card text-white bg-{{ data.color|default('primary') }} mb-3">
+                    <div class="card-header">{{ status }}</div>
+                    <div class="card-body">
+                        <h5 class="card-title">{{ data.count|default(0) }}</h5>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            
+            <div class="col-md-3">
+                <div class="card text-white bg-danger mb-3">
+                    <div class="card-header">SLA Breached</div>
+                    <div class="card-body">
+                        <h5 class="card-title">{{ sla_breached|default(0) }}</h5>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-white bg-warning mb-3">
+                    <div class="card-header">At Risk</div>
+                    <div class="card-body">
+                        <h5 class="card-title">{{ at_risk_tickets|default(0) }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Recent Tickets</h5>
+                        <a href="{{ url_for('main.create_ticket') }}" class="btn btn-primary btn-sm">New Ticket</a>
+                    </div>
+                    <div class="card-body">
+                        {% if recent_tickets %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Subject</th>
+                                        <th>Status</th>
+                                        <th>Priority</th>
+                                        <th>Created</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for ticket in recent_tickets %}
+                                    <tr>
+                                        <td>{{ ticket.id }}</td>
+                                        <td>{{ ticket.subject }}</td>
+                                        <td>
+                                            <span class="badge bg-{{ ticket.status.color|default('secondary') }}">
+                                                {{ ticket.status.name }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-{{ ticket.priority.color|default('secondary') }}">
+                                                {{ ticket.priority.name }}
+                                            </span>
+                                        </td>
+                                        <td>{{ ticket.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                        <td>
+                                            <a href="{{ url_for('main.view_ticket', ticket_id=ticket.id) }}" class="btn btn-sm btn-outline-primary">View</a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-center">No tickets found. <a href="{{ url_for('main.create_ticket') }}" class="btn btn-link p-0">Create a new ticket</a>.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
